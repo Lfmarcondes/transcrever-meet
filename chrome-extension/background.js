@@ -94,7 +94,10 @@ async function extractOpenRouter(transcript, openrouterKey) {
       response_format: { type: 'json_object' }
     })
   });
-  if (!resp.ok) throw new Error('Falha OpenRouter');
+  if (!resp.ok) {
+    const raw = await resp.text();
+    throw new Error(`OpenRouter falhou (${resp.status}): ${raw.slice(0, 400)}`);
+  }
   const data = await resp.json();
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
@@ -109,7 +112,10 @@ async function extractGrok(transcript, grokKey) {
       response_format: { type: 'json_object' }
     })
   });
-  if (!resp.ok) throw new Error('Falha Grok');
+  if (!resp.ok) {
+    const raw = await resp.text();
+    throw new Error(`Grok falhou (${resp.status}): ${raw.slice(0, 400)}`);
+  }
   const data = await resp.json();
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
@@ -146,12 +152,18 @@ async function processPipeline(base64Audio, panelTabId) {
   setState({ phase: 'summarizing', status: 'estruturando resumo...', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'estruturando resumo...');
   let structured;
+  let openRouterError = '';
   try {
     if (!openrouterKey) throw new Error('sem openrouter');
     structured = await extractOpenRouter(transcript, openrouterKey);
-  } catch (_) {
-    if (!grokKey) throw new Error('Falha OpenRouter e Grok nao configurado');
-    structured = await extractGrok(transcript, grokKey);
+  } catch (e) {
+    openRouterError = String(e?.message || e);
+    if (!grokKey) throw new Error(`OpenRouter falhou e Grok nao configurado: ${openRouterError}`);
+    try {
+      structured = await extractGrok(transcript, grokKey);
+    } catch (g) {
+      throw new Error(`OpenRouter: ${openRouterError} | Grok: ${String(g?.message || g)}`);
+    }
   }
 
   structured.data_reuniao = structured.data_reuniao || new Date().toISOString();
