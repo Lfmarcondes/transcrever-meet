@@ -40,7 +40,13 @@ startBtn.onclick = async () => {
 
 stopBtn.onclick = async () => {
   setStatus('finalizando reuniao e processando (pode levar 1-3 min)...');
-  window.postMessage({ type: 'MEETLEADS_STOP' }, '*');
+  const payload = {
+    assembly: assemblyInput.value.trim(),
+    openrouter: openrouterInput.value.trim(),
+    groq: groqInput.value.trim()
+  };
+  saveLocalKeys(payload);
+  window.postMessage({ type: 'MEETLEADS_STOP', payload }, '*');
 };
 
 window.addEventListener('message', (event) => {

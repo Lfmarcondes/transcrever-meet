@@ -175,6 +175,19 @@ async function processPipeline(base64Audio, panelTabId) {
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_RESULT', structured);
 }
 
+async function saveKeysFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  const assembly = payload.assembly || '';
+  const openrouter = payload.openrouter || '';
+  const groq = payload.groq || payload.grok || '';
+  await chrome.storage.local.set({
+    assemblyKey: assembly,
+    openrouterKey: openrouter,
+    groqKey: groq,
+    grokKey: groq
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const panelTabId = sender?.tab?.id;
 
@@ -230,6 +243,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true, accepted: true });
     if (!panelTabId) return false;
     (async () => {
+      await saveKeysFromPayload(msg.payload);
       setState({ phase: 'stopping', status: 'processando audio e gerando resumo...', error: '' });
       const base64Audio = await stopCaptureOnly();
       await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'processando audio e gerando resumo...');

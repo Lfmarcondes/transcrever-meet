@@ -64,7 +64,7 @@ window.addEventListener('message', async (event) => {
 
   if (event.data.type === 'MEETLEADS_STOP') {
     sendRuntimeMessage(
-      { type: 'STOP_AND_PROCESS' },
+      { type: 'STOP_AND_PROCESS', payload: event.data.payload || {} },
       () => window.postMessage({ type: 'MEETLEADS_STATUS', payload: 'processando audio e gerando resumo...' }, '*'),
       (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
     );
