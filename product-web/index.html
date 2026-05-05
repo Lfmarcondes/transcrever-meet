@@ -1,0 +1,30 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meet Leads - Painel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Meet Leads</h1>
+    <p class="subtitle">Operacao comercial em 2 cliques</p>
+
+    <section class="card">
+      <div class="row">
+        <button id="startBtn">Iniciar reuniao</button>
+        <button id="stopBtn" class="danger">Parar e gerar resumo</button>
+      </div>
+      <p id="status">Status: aguardando</p>
+    </section>
+
+    <section class="card">
+      <h2>Resultado</h2>
+      <pre id="output">Nenhum resultado ainda.</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

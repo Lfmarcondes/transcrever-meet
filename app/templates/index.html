@@ -1,0 +1,62 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meet Sales Intelligence</title>
+  <style>
+    :root { --bg:#f5f7fb; --card:#ffffff; --text:#1a1f36; --accent:#0f766e; --danger:#b91c1c; }
+    body { margin:0; font-family: 'Segoe UI', Tahoma, sans-serif; background:linear-gradient(135deg,#e6fffa,#eef2ff); color:var(--text); }
+    .wrap { max-width: 860px; margin: 40px auto; padding: 20px; }
+    .card { background:var(--card); border-radius:16px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.08); }
+    h1 { margin-top:0; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    button { border:0; border-radius:10px; padding:12px 16px; font-weight:600; cursor:pointer; }
+    .start { background:var(--accent); color:white; }
+    .stop { background:var(--danger); color:white; }
+    .status { margin:16px 0; padding:10px; background:#f8fafc; border-radius:8px; }
+    pre { white-space:pre-wrap; background:#0b1020; color:#d1fae5; padding:14px; border-radius:10px; min-height:220px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Resumo de Reuniões (Google Meet)</h1>
+      <p>Fluxo simples para o comercial: entrar na reunião, clicar em iniciar, no final clicar em parar e processar.</p>
+      <div class="row">
+        <button class="start" onclick="startRec()">1) Iniciar Gravação</button>
+        <button class="stop" onclick="stopRec()">2) Parar e Processar</button>
+      </div>
+      <div class="status" id="status">Status: carregando...</div>
+      <h3>Resultado JSON</h3>
+      <pre id="result">Aguardando processamento...</pre>
+    </div>
+  </div>
+
+<script>
+async function refreshStatus() {
+  const r = await fetch('/recording/status');
+  const j = await r.json();
+  document.getElementById('status').innerText = `Status: ${j.recording ? 'Gravando' : 'Parado'} ${j.current_file ? '| Arquivo: ' + j.current_file : ''}`;
+}
+
+async function startRec() {
+  const r = await fetch('/recording/start', { method: 'POST' });
+  const j = await r.json();
+  if (!r.ok) return alert(j.detail || 'Erro ao iniciar');
+  await refreshStatus();
+}
+
+async function stopRec() {
+  const r = await fetch('/recording/stop-and-process', { method: 'POST' });
+  const j = await r.json();
+  if (!r.ok) return alert(j.detail || 'Erro ao processar');
+  document.getElementById('result').innerText = JSON.stringify(j, null, 2);
+  await refreshStatus();
+}
+
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>
