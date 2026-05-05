@@ -1,4 +1,5 @@
 ﻿let isRecording = false;
+const EXT_VERSION = '0.3.1';
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
@@ -23,6 +24,10 @@ function runtimeSend(msg) {
 function chooseTabAudioStream() {
   return new Promise((resolve, reject) => {
     chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], (streamId) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
       if (!streamId) {
         reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
         return;
@@ -106,8 +111,9 @@ async function extractGrok(transcript, grokKey) {
 
 async function startCapture() {
   if (isRecording) return { ok: false, error: 'ja existe gravacao em andamento' };
-  await ensureOffscreenDocument();
+  // chooseDesktopMedia precisa acontecer direto no gesto do usuario.
   const streamId = await chooseTabAudioStream();
+  await ensureOffscreenDocument();
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
   if (!resp.ok) return resp;
   isRecording = true;
@@ -143,6 +149,11 @@ async function stopAndProcess() {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'PING') {
+    sendResponse({ ok: true, version: EXT_VERSION });
+    return;
+  }
+
   if (msg?.type === 'SAVE_KEYS') {
     chrome.storage.local.set({ assemblyKey: msg.payload?.assembly || '', openrouterKey: msg.payload?.openrouter || '', grokKey: msg.payload?.grok || '' })
       .then(() => sendResponse({ ok: true }))

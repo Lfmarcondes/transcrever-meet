@@ -35,3 +35,5 @@ window.addEventListener('message', (event) => {
   }
   if (event.data.type === 'MEETLEADS_ERROR') setStatus(`erro: ${event.data.payload}`);
 });
+
+window.postMessage({ type: 'MEETLEADS_PING' }, '*');

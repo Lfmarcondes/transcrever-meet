@@ -15,6 +15,14 @@
 window.addEventListener('message', async (event) => {
   if (!event.data?.type) return;
 
+  if (event.data.type === 'MEETLEADS_PING') {
+    sendRuntimeMessage(
+      { type: 'PING' },
+      (resp) => window.postMessage({ type: 'MEETLEADS_STATUS', payload: `extensao conectada v${resp.version}` }, '*'),
+      (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
+    );
+  }
+
   if (event.data.type === 'MEETLEADS_SAVE_KEYS') {
     sendRuntimeMessage(
       { type: 'SAVE_KEYS', payload: event.data.payload || {} },
