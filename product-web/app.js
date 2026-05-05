@@ -3,15 +3,35 @@ const outputEl = document.getElementById('output');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const saveKeysBtn = document.getElementById('saveKeysBtn');
+const assemblyInput = document.getElementById('assemblyKey');
+const openrouterInput = document.getElementById('openrouterKey');
+const grokInput = document.getElementById('grokKey');
 
 function setStatus(msg){ statusEl.textContent = `Status: ${msg}`; }
 
+function loadLocalKeys() {
+  assemblyInput.value = localStorage.getItem('meetleads_assembly') || '';
+  openrouterInput.value = localStorage.getItem('meetleads_openrouter') || '';
+  grokInput.value = localStorage.getItem('meetleads_grok') || '';
+}
+
+function saveLocalKeys(payload) {
+  localStorage.setItem('meetleads_assembly', payload.assembly || '');
+  localStorage.setItem('meetleads_openrouter', payload.openrouter || '');
+  localStorage.setItem('meetleads_grok', payload.grok || '');
+}
+
+function pingExtension() {
+  window.postMessage({ type: 'MEETLEADS_PING' }, '*');
+}
+
 saveKeysBtn.onclick = () => {
   const payload = {
-    assembly: document.getElementById('assemblyKey').value.trim(),
-    openrouter: document.getElementById('openrouterKey').value.trim(),
-    grok: document.getElementById('grokKey').value.trim()
+    assembly: assemblyInput.value.trim(),
+    openrouter: openrouterInput.value.trim(),
+    grok: grokInput.value.trim()
   };
+  saveLocalKeys(payload);
   setStatus('salvando chaves...');
   window.postMessage({ type: 'MEETLEADS_SAVE_KEYS', payload }, '*');
 };
@@ -36,4 +56,11 @@ window.addEventListener('message', (event) => {
   if (event.data.type === 'MEETLEADS_ERROR') setStatus(`erro: ${event.data.payload}`);
 });
 
-window.postMessage({ type: 'MEETLEADS_PING' }, '*');
+loadLocalKeys();
+setStatus('conectando extensao...');
+setTimeout(pingExtension, 200);
+setTimeout(() => {
+  if (statusEl.textContent.includes('conectando')) {
+    setStatus('extensao nao conectada. Atualize em edge://extensions e recarregue a pagina.');
+  }
+}, 1500);
