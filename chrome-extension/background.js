@@ -61,7 +61,11 @@ async function uploadToAssemblyAI(base64Audio, assemblyKey) {
 async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
   const createResp = await fetch('https://api.assemblyai.com/v2/transcript', {
     method: 'POST', headers: { authorization: assemblyKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ audio_url: uploadUrl, language_code: 'pt' })
+    body: JSON.stringify({
+      audio_url: uploadUrl,
+      language_code: 'pt',
+      speech_model: 'universal-2'
+    })
   });
   if (!createResp.ok) {
     const raw = await createResp.text();
