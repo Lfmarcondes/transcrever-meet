@@ -1,5 +1,5 @@
 ﻿let isRecording = false;
-const EXT_VERSION = '0.4.0';
+const EXT_VERSION = '0.4.1';
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
@@ -23,10 +23,7 @@ function runtimeSend(msg) {
 
 function chooseTabAudioStream(targetTab) {
   return new Promise((resolve, reject) => {
-    if (!targetTab || !targetTab.id) {
-      reject(new Error('Nao foi possivel identificar a aba de origem do painel.'));
-      return;
-    }
+    if (!targetTab || !targetTab.id) return reject(new Error('Nao foi possivel identificar a aba de origem do painel.'));
     chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], targetTab, (streamId) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
       if (!streamId) return reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
@@ -49,9 +46,7 @@ function safeJsonParse(raw) {
 }
 
 async function postToPanel(panelTabId, type, payload) {
-  try {
-    await chrome.tabs.sendMessage(panelTabId, { type, payload });
-  } catch (_) {}
+  try { await chrome.tabs.sendMessage(panelTabId, { type, payload }); } catch (_) {}
 }
 
 async function uploadToAssemblyAI(base64Audio, assemblyKey) {
@@ -113,14 +108,14 @@ async function extractGrok(transcript, grokKey) {
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
 
-async function startCapture(targetTab) {
-  if (isRecording) return { ok: false, error: 'ja existe gravacao em andamento' };
+async function doStartCapture(panelTabId, targetTab) {
+  if (isRecording) throw new Error('ja existe gravacao em andamento');
   const streamId = await chooseTabAudioStream(targetTab);
   await ensureOffscreenDocument();
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
-  if (!resp.ok) return resp;
+  if (!resp.ok) throw new Error(resp.error || 'Falha ao iniciar gravacao');
   isRecording = true;
-  return { ok: true };
+  await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'gravando reuniao');
 }
 
 async function stopCaptureOnly() {
@@ -157,45 +152,47 @@ async function processPipeline(base64Audio, panelTabId) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  (async () => {
-    if (msg?.type === 'PING') {
-      sendResponse({ ok: true, version: EXT_VERSION });
-      return;
-    }
+  const panelTabId = sender?.tab?.id;
 
-    if (msg?.type === 'SAVE_KEYS') {
-      await chrome.storage.local.set({
-        assemblyKey: msg.payload?.assembly || '',
-        openrouterKey: msg.payload?.openrouter || '',
-        grokKey: msg.payload?.grok || ''
-      });
+  if (msg?.type === 'PING') {
+    sendResponse({ ok: true, version: EXT_VERSION });
+    return;
+  }
+
+  if (msg?.type === 'SAVE_KEYS') {
+    chrome.storage.local.set({
+      assemblyKey: msg.payload?.assembly || '',
+      openrouterKey: msg.payload?.openrouter || '',
+      grokKey: msg.payload?.grok || ''
+    }).then(async () => {
       sendResponse({ ok: true });
-      return;
-    }
+      if (panelTabId) await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'chaves salvas com sucesso');
+    }).catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
 
-    if (msg?.type === 'FIND_MEET_TAB_AND_START') {
-      const resp = await startCapture(sender?.tab);
-      sendResponse(resp);
-      return;
-    }
+  if (msg?.type === 'FIND_MEET_TAB_AND_START') {
+    sendResponse({ ok: true, accepted: true });
+    if (!panelTabId) return false;
+    doStartCapture(panelTabId, sender?.tab).catch(async (e) => {
+      await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
+    });
+    return false;
+  }
 
-    if (msg?.type === 'STOP_AND_PROCESS') {
-      const panelTabId = sender?.tab?.id;
-      if (!panelTabId) {
-        sendResponse({ ok: false, error: 'Nao foi possivel identificar aba do painel.' });
-        return;
-      }
+  if (msg?.type === 'STOP_AND_PROCESS') {
+    sendResponse({ ok: true, accepted: true });
+    if (!panelTabId) return false;
+    (async () => {
       const base64Audio = await stopCaptureOnly();
-      sendResponse({ ok: true, accepted: true });
+      await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'processando audio e gerando resumo...');
+      await processPipeline(base64Audio, panelTabId);
+    })().catch(async (e) => {
+      await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
+    });
+    return false;
+  }
 
-      processPipeline(base64Audio, panelTabId).catch(async (e) => {
-        await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
-      });
-      return;
-    }
-
-    sendResponse({ ok: false, error: 'Mensagem desconhecida.' });
-  })().catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
-
-  return true;
+  sendResponse({ ok: false, error: 'Mensagem desconhecida.' });
+  return false;
 });
