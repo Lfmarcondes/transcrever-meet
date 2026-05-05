@@ -50,7 +50,10 @@ async function uploadToAssemblyAI(base64Audio, assemblyKey) {
   const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
     method: 'POST', headers: { authorization: assemblyKey, 'content-type': 'application/octet-stream' }, body: bytes
   });
-  if (!uploadResp.ok) throw new Error('Falha upload AssemblyAI');
+  if (!uploadResp.ok) {
+    const raw = await uploadResp.text();
+    throw new Error(`AssemblyAI upload falhou (${uploadResp.status}): ${raw.slice(0, 300)}`);
+  }
   const uploadData = await uploadResp.json();
   return uploadData.upload_url;
 }
@@ -60,7 +63,10 @@ async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
     method: 'POST', headers: { authorization: assemblyKey, 'content-type': 'application/json' },
     body: JSON.stringify({ audio_url: uploadUrl, language_code: 'pt' })
   });
-  if (!createResp.ok) throw new Error('Falha ao criar transcricao');
+  if (!createResp.ok) {
+    const raw = await createResp.text();
+    throw new Error(`AssemblyAI transcricao falhou (${createResp.status}): ${raw.slice(0, 300)}`);
+  }
   const createData = await createResp.json();
 
   for (let i = 0; i < 90; i++) {
