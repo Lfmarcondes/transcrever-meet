@@ -64,7 +64,7 @@ async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
     body: JSON.stringify({
       audio_url: uploadUrl,
       language_code: 'pt',
-      speech_model: 'universal-2'
+      speech_models: ['universal-2']
     })
   });
   if (!createResp.ok) {
