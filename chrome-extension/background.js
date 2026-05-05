@@ -1,5 +1,30 @@
 ﻿let isRecording = false;
-let activeTabId = null;
+
+const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
+Recebera a transcricao de uma reuniao com lead.
+Retorne APENAS JSON valido no schema solicitado, sem markdown.
+
+Schema esperado:
+{
+  "lead_nome": "",
+  "data_reuniao": "",
+  "perfil_lead": {
+    "tipo": "investidor | moradia | indeciso",
+    "nivel_experiencia": "iniciante | intermediario | avancado",
+    "ticket_estimado": "",
+    "prazo_decisao": ""
+  },
+  "interesses": [],
+  "objecoes": [],
+  "dores_identificadas": [],
+  "gatilhos_que_mais_reagiu": [],
+  "nivel_engajamento": 0,
+  "probabilidade_fechamento": 0,
+  "proximos_passos": [],
+  "resumo_geral": "",
+  "origem_transcricao": "",
+  "confianca_extracao": 0
+}`;
 
 async function ensureOffscreenDocument() {
   const url = chrome.runtime.getURL('offscreen.html');
@@ -18,81 +43,169 @@ async function ensureOffscreenDocument() {
 
 function findMeetTab() {
   return new Promise((resolve) => {
-    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
-      resolve((tabs && tabs[0]) || null);
-    });
+    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => resolve((tabs && tabs[0]) || null));
   });
 }
 
 function runtimeSend(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (resp) => {
-      if (chrome.runtime.lastError) {
-        resolve({ ok: false, error: chrome.runtime.lastError.message });
-        return;
-      }
+      if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
       resolve(resp || { ok: false, error: 'sem resposta' });
     });
   });
 }
 
+function decodeBase64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function safeJsonParse(raw) {
+  try { return JSON.parse(raw); } catch (_) {}
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+  return JSON.parse(cleaned);
+}
+
+async function uploadToAssemblyAI(base64Audio, assemblyKey) {
+  const bytes = decodeBase64ToBytes(base64Audio);
+  const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
+    method: 'POST',
+    headers: { authorization: assemblyKey, 'content-type': 'application/octet-stream' },
+    body: bytes
+  });
+  if (!uploadResp.ok) throw new Error('Falha upload AssemblyAI');
+  const uploadData = await uploadResp.json();
+  return uploadData.upload_url;
+}
+
+async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
+  const createResp = await fetch('https://api.assemblyai.com/v2/transcript', {
+    method: 'POST',
+    headers: { authorization: assemblyKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ audio_url: uploadUrl, language_code: 'pt' })
+  });
+  if (!createResp.ok) throw new Error('Falha ao criar transcricao');
+  const createData = await createResp.json();
+
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(`https://api.assemblyai.com/v2/transcript/${createData.id}`, {
+      headers: { authorization: assemblyKey }
+    });
+    if (!poll.ok) throw new Error('Falha polling transcricao');
+    const p = await poll.json();
+    if (p.status === 'completed') return p.text || '';
+    if (p.status === 'error') throw new Error(p.error || 'Erro na transcricao');
+  }
+  throw new Error('Timeout na transcricao');
+}
+
+async function extractOpenRouter(transcript, openrouterKey) {
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openrouterKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'openrouter/auto',
+      messages: [
+        { role: 'system', content: EXTRACTION_PROMPT },
+        { role: 'user', content: transcript }
+      ],
+      response_format: { type: 'json_object' }
+    })
+  });
+  if (!resp.ok) throw new Error('Falha OpenRouter');
+  const data = await resp.json();
+  return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
+}
+
+async function extractGrok(transcript, grokKey) {
+  const resp = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${grokKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'grok-3-mini',
+      messages: [
+        { role: 'system', content: EXTRACTION_PROMPT },
+        { role: 'user', content: transcript }
+      ],
+      response_format: { type: 'json_object' }
+    })
+  });
+  if (!resp.ok) throw new Error('Falha Grok');
+  const data = await resp.json();
+  return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
+}
+
 async function startCapture() {
   if (isRecording) return { ok: false, error: 'ja existe gravacao em andamento' };
-
   const tab = await findMeetTab();
   if (!tab?.id) return { ok: false, error: 'Nenhuma aba do Google Meet aberta' };
 
   await ensureOffscreenDocument();
-
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
   if (!resp.ok) return resp;
 
   isRecording = true;
-  activeTabId = tab.id;
   return { ok: true };
 }
 
-async function stopCaptureAndBuildMock() {
+async function stopAndProcess() {
   if (!isRecording) return { ok: false, error: 'nao existe gravacao em andamento' };
+
+  const { assemblyKey, openrouterKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'grokKey']);
+  if (!assemblyKey) return { ok: false, error: 'Configure AssemblyAI key no painel' };
+  if (!openrouterKey && !grokKey) return { ok: false, error: 'Configure OpenRouter ou Grok key no painel' };
 
   const stopResp = await runtimeSend({ type: 'OFFSCREEN_STOP' });
   if (!stopResp.ok) return stopResp;
-
   isRecording = false;
 
-  const result = {
-    lead_nome: '',
-    data_reuniao: new Date().toISOString(),
-    perfil_lead: {
-      tipo: 'indeciso',
-      nivel_experiencia: 'iniciante',
-      ticket_estimado: '',
-      prazo_decisao: ''
-    },
-    interesses: [],
-    objecoes: [],
-    dores_identificadas: [],
-    gatilhos_que_mais_reagiu: [],
-    nivel_engajamento: 0,
-    probabilidade_fechamento: 0,
-    proximos_passos: ['Fluxo de captura corrigido. Proximo passo: plugar transcricao real no audio capturado.'],
-    resumo_geral: 'Captura start/stop da extensao funcionando com offscreen document.',
-    origem_transcricao: 'chrome_tab_capture_mvp',
-    confianca_extracao: 40
-  };
+  const uploadUrl = await uploadToAssemblyAI(stopResp.base64, assemblyKey);
+  const transcript = await transcribeAssemblyAI(uploadUrl, assemblyKey);
 
-  return { ok: true, payload: result };
+  let structured;
+  try {
+    if (!openrouterKey) throw new Error('sem openrouter');
+    structured = await extractOpenRouter(transcript, openrouterKey);
+  } catch (_) {
+    if (!grokKey) throw new Error('Falha OpenRouter e Grok nao configurado');
+    structured = await extractGrok(transcript, grokKey);
+  }
+
+  structured.data_reuniao = structured.data_reuniao || new Date().toISOString();
+  structured.origem_transcricao = 'assemblyai_tab_capture';
+  if (typeof structured.confianca_extracao !== 'number') structured.confianca_extracao = 75;
+
+  return { ok: true, payload: structured };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'SAVE_KEYS') {
+    chrome.storage.local.set({
+      assemblyKey: msg.payload?.assembly || '',
+      openrouterKey: msg.payload?.openrouter || '',
+      grokKey: msg.payload?.grok || ''
+    }).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+
   if (msg?.type === 'FIND_MEET_TAB_AND_START') {
     startCapture().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
 
   if (msg?.type === 'STOP_AND_PROCESS') {
-    stopCaptureAndBuildMock().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    stopAndProcess().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
 });

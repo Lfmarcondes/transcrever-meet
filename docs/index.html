@@ -12,9 +12,21 @@
     <p class="subtitle">Operacao comercial em 2 cliques</p>
 
     <section class="card">
+      <h2>Configuracao (admin)</h2>
+      <div class="grid">
+        <input id="assemblyKey" type="password" placeholder="AssemblyAI API Key" />
+        <input id="openrouterKey" type="password" placeholder="OpenRouter API Key" />
+        <input id="grokKey" type="password" placeholder="Grok/xAI API Key (fallback)" />
+      </div>
       <div class="row">
-        <button id="startBtn">Iniciar reuniao</button>
-        <button id="stopBtn" class="danger">Parar e gerar resumo</button>
+        <button id="saveKeysBtn">Salvar chaves</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <button id="startBtn">1) Iniciar reuniao</button>
+        <button id="stopBtn" class="danger">2) Parar e gerar resumo</button>
       </div>
       <p id="status">Status: aguardando</p>
     </section>

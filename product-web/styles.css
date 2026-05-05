@@ -4,6 +4,8 @@
 .subtitle{margin-top:-8px;opacity:.8}
 .card{background:var(--card);border-radius:12px;padding:16px;margin:16px 0;box-shadow:0 6px 24px rgba(0,0,0,.08)}
 .row{display:flex;gap:10px;flex-wrap:wrap}
+.grid{display:grid;gap:8px}
+input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
 button{border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer;background:var(--ok);color:#fff}
 button.danger{background:var(--danger)}
 pre{background:#0b1020;color:#d1fae5;padding:12px;border-radius:10px;white-space:pre-wrap;min-height:180px}

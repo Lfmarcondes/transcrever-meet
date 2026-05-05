@@ -1,14 +1,16 @@
 ﻿{
   "manifest_version": 3,
   "name": "Meet Leads Capture",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Captura audio da aba do Google Meet e envia para processamento",
   "permissions": ["tabCapture", "storage", "tabs", "offscreen"],
   "host_permissions": [
     "https://meet.google.com/*",
     "https://*.github.io/*",
     "http://127.0.0.1:5500/*",
-    "http://127.0.0.1:8080/*"
+    "https://api.assemblyai.com/*",
+    "https://openrouter.ai/*",
+    "https://api.x.ai/*"
   ],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Meet Leads" },

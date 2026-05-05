@@ -15,6 +15,14 @@
 window.addEventListener('message', async (event) => {
   if (!event.data?.type) return;
 
+  if (event.data.type === 'MEETLEADS_SAVE_KEYS') {
+    sendRuntimeMessage(
+      { type: 'SAVE_KEYS', payload: event.data.payload || {} },
+      () => window.postMessage({ type: 'MEETLEADS_STATUS', payload: 'chaves salvas com sucesso' }, '*'),
+      (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
+    );
+  }
+
   if (event.data.type === 'MEETLEADS_START') {
     sendRuntimeMessage(
       { type: 'FIND_MEET_TAB_AND_START' },

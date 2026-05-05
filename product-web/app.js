@@ -2,8 +2,18 @@
 const outputEl = document.getElementById('output');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+const saveKeysBtn = document.getElementById('saveKeysBtn');
 
 function setStatus(msg){ statusEl.textContent = `Status: ${msg}`; }
+
+saveKeysBtn.onclick = () => {
+  const payload = {
+    assembly: document.getElementById('assemblyKey').value.trim(),
+    openrouter: document.getElementById('openrouterKey').value.trim(),
+    grok: document.getElementById('grokKey').value.trim()
+  };
+  window.postMessage({ type: 'MEETLEADS_SAVE_KEYS', payload }, '*');
+};
 
 startBtn.onclick = async () => {
   setStatus('enviando comando para extensao...');
