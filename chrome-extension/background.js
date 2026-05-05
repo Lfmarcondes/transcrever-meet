@@ -1,9 +1,14 @@
 ﻿let isRecording = false;
-const EXT_VERSION = '0.4.1';
+const EXT_VERSION = '0.4.2';
+let lastState = { phase: 'idle', status: 'aguardando', error: '', result: null, updatedAt: Date.now() };
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
 Retorne APENAS JSON valido no schema solicitado, sem markdown.`;
+
+function setState(patch) {
+  lastState = { ...lastState, ...patch, updatedAt: Date.now() };
+}
 
 async function ensureOffscreenDocument() {
   const url = chrome.runtime.getURL('offscreen.html');
@@ -110,11 +115,13 @@ async function extractGrok(transcript, grokKey) {
 
 async function doStartCapture(panelTabId, targetTab) {
   if (isRecording) throw new Error('ja existe gravacao em andamento');
+  setState({ phase: 'starting', status: 'abrindo seletor de captura...', error: '' });
   const streamId = await chooseTabAudioStream(targetTab);
   await ensureOffscreenDocument();
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
   if (!resp.ok) throw new Error(resp.error || 'Falha ao iniciar gravacao');
   isRecording = true;
+  setState({ phase: 'recording', status: 'gravando reuniao', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'gravando reuniao');
 }
 
@@ -131,10 +138,12 @@ async function processPipeline(base64Audio, panelTabId) {
   if (!assemblyKey) throw new Error('Configure AssemblyAI key no painel');
   if (!openrouterKey && !grokKey) throw new Error('Configure OpenRouter ou Grok key no painel');
 
+  setState({ phase: 'transcribing', status: 'transcrevendo audio...', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'transcrevendo audio...');
   const uploadUrl = await uploadToAssemblyAI(base64Audio, assemblyKey);
   const transcript = await transcribeAssemblyAI(uploadUrl, assemblyKey);
 
+  setState({ phase: 'summarizing', status: 'estruturando resumo...', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'estruturando resumo...');
   let structured;
   try {
@@ -148,6 +157,7 @@ async function processPipeline(base64Audio, panelTabId) {
   structured.data_reuniao = structured.data_reuniao || new Date().toISOString();
   structured.origem_transcricao = 'assemblyai_desktop_capture';
   if (typeof structured.confianca_extracao !== 'number') structured.confianca_extracao = 75;
+  setState({ phase: 'done', status: 'resumo gerado com sucesso', error: '', result: structured });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_RESULT', structured);
 }
 
@@ -159,12 +169,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  if (msg?.type === 'GET_STATE') {
+    sendResponse({ ok: true, state: lastState });
+    return;
+  }
+
   if (msg?.type === 'SAVE_KEYS') {
     chrome.storage.local.set({
       assemblyKey: msg.payload?.assembly || '',
       openrouterKey: msg.payload?.openrouter || '',
       grokKey: msg.payload?.grok || ''
     }).then(async () => {
+      setState({ status: 'chaves salvas com sucesso', error: '' });
       sendResponse({ ok: true });
       if (panelTabId) await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'chaves salvas com sucesso');
     }).catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
@@ -175,6 +191,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true, accepted: true });
     if (!panelTabId) return false;
     doStartCapture(panelTabId, sender?.tab).catch(async (e) => {
+      setState({ phase: 'error', status: 'erro', error: String(e?.message || e) });
       await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
     });
     return false;
@@ -184,10 +201,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true, accepted: true });
     if (!panelTabId) return false;
     (async () => {
+      setState({ phase: 'stopping', status: 'processando audio e gerando resumo...', error: '' });
       const base64Audio = await stopCaptureOnly();
       await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'processando audio e gerando resumo...');
       await processPipeline(base64Audio, panelTabId);
     })().catch(async (e) => {
+      setState({ phase: 'error', status: 'erro', error: String(e?.message || e) });
       await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
     });
     return false;

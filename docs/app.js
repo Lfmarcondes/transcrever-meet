@@ -8,22 +8,18 @@ const openrouterInput = document.getElementById('openrouterKey');
 const grokInput = document.getElementById('grokKey');
 
 function setStatus(msg){ statusEl.textContent = `Status: ${msg}`; }
-
 function loadLocalKeys() {
   assemblyInput.value = localStorage.getItem('meetleads_assembly') || '';
   openrouterInput.value = localStorage.getItem('meetleads_openrouter') || '';
   grokInput.value = localStorage.getItem('meetleads_grok') || '';
 }
-
 function saveLocalKeys(payload) {
   localStorage.setItem('meetleads_assembly', payload.assembly || '');
   localStorage.setItem('meetleads_openrouter', payload.openrouter || '');
   localStorage.setItem('meetleads_grok', payload.grok || '');
 }
-
-function pingExtension() {
-  window.postMessage({ type: 'MEETLEADS_PING' }, '*');
-}
+function pingExtension() { window.postMessage({ type: 'MEETLEADS_PING' }, '*'); }
+function pullState() { window.postMessage({ type: 'MEETLEADS_GET_STATE' }, '*'); }
 
 saveKeysBtn.onclick = () => {
   const payload = {
@@ -53,14 +49,21 @@ window.addEventListener('message', (event) => {
     outputEl.textContent = JSON.stringify(event.data.payload, null, 2);
     setStatus('resumo gerado com sucesso');
   }
+  if (event.data.type === 'MEETLEADS_STATE') {
+    const st = event.data.payload || {};
+    if (st.status) setStatus(st.status);
+    if (st.result) outputEl.textContent = JSON.stringify(st.result, null, 2);
+    if (st.error) setStatus(`erro: ${st.error}`);
+  }
   if (event.data.type === 'MEETLEADS_ERROR') setStatus(`erro: ${event.data.payload}`);
 });
 
 loadLocalKeys();
 setStatus('conectando extensao...');
 setTimeout(pingExtension, 200);
+setInterval(pullState, 1500);
 setTimeout(() => {
   if (statusEl.textContent.includes('conectando')) {
     setStatus('extensao nao conectada. Atualize em edge://extensions e recarregue a pagina.');
   }
-}, 1500);
+}, 2000);

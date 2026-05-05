@@ -14,16 +14,9 @@
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg?.type) return;
-
-  if (msg.type === 'MEETLEADS_PUSH_STATUS') {
-    window.postMessage({ type: 'MEETLEADS_STATUS', payload: msg.payload }, '*');
-  }
-  if (msg.type === 'MEETLEADS_PUSH_RESULT') {
-    window.postMessage({ type: 'MEETLEADS_RESULT', payload: msg.payload }, '*');
-  }
-  if (msg.type === 'MEETLEADS_PUSH_ERROR') {
-    window.postMessage({ type: 'MEETLEADS_ERROR', payload: msg.payload }, '*');
-  }
+  if (msg.type === 'MEETLEADS_PUSH_STATUS') window.postMessage({ type: 'MEETLEADS_STATUS', payload: msg.payload }, '*');
+  if (msg.type === 'MEETLEADS_PUSH_RESULT') window.postMessage({ type: 'MEETLEADS_RESULT', payload: msg.payload }, '*');
+  if (msg.type === 'MEETLEADS_PUSH_ERROR') window.postMessage({ type: 'MEETLEADS_ERROR', payload: msg.payload }, '*');
 });
 
 window.addEventListener('message', async (event) => {
@@ -33,6 +26,14 @@ window.addEventListener('message', async (event) => {
     sendRuntimeMessage(
       { type: 'PING' },
       (resp) => window.postMessage({ type: 'MEETLEADS_STATUS', payload: `extensao conectada v${resp.version}` }, '*'),
+      (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
+    );
+  }
+
+  if (event.data.type === 'MEETLEADS_GET_STATE') {
+    sendRuntimeMessage(
+      { type: 'GET_STATE' },
+      (resp) => window.postMessage({ type: 'MEETLEADS_STATE', payload: resp.state }, '*'),
       (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
     );
   }
@@ -48,7 +49,7 @@ window.addEventListener('message', async (event) => {
   if (event.data.type === 'MEETLEADS_START') {
     sendRuntimeMessage(
       { type: 'FIND_MEET_TAB_AND_START' },
-      () => window.postMessage({ type: 'MEETLEADS_STATUS', payload: 'gravando reuniao' }, '*'),
+      () => window.postMessage({ type: 'MEETLEADS_STATUS', payload: 'iniciando gravacao...' }, '*'),
       (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
     );
   }
