@@ -1,7 +1,7 @@
 ﻿{
   "manifest_version": 3,
   "name": "Meet Leads Capture",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Captura audio da aba do Google Meet e envia para processamento",
   "permissions": ["storage", "tabs", "offscreen", "desktopCapture"],
   "host_permissions": [

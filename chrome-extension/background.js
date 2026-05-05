@@ -1,5 +1,5 @@
 ﻿let isRecording = false;
-const EXT_VERSION = '0.4.2';
+const EXT_VERSION = '0.5.0';
 let lastState = { phase: 'idle', status: 'aguardando', error: '', result: null, updatedAt: Date.now() };
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
@@ -26,16 +26,7 @@ function runtimeSend(msg) {
   });
 }
 
-function chooseTabAudioStream(targetTab) {
-  return new Promise((resolve, reject) => {
-    if (!targetTab || !targetTab.id) return reject(new Error('Nao foi possivel identificar a aba de origem do painel.'));
-    chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], targetTab, (streamId) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!streamId) return reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
-      resolve(streamId);
-    });
-  });
-}
+// Captura iniciada no offscreen via getDisplayMedia.
 
 function decodeBase64ToBytes(base64) {
   const binary = atob(base64);
@@ -113,12 +104,11 @@ async function extractGrok(transcript, grokKey) {
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
 
-async function doStartCapture(panelTabId, targetTab) {
+async function doStartCapture(panelTabId, _targetTab) {
   if (isRecording) throw new Error('ja existe gravacao em andamento');
   setState({ phase: 'starting', status: 'abrindo seletor de captura...', error: '' });
-  const streamId = await chooseTabAudioStream(targetTab);
   await ensureOffscreenDocument();
-  const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
+  const resp = await runtimeSend({ type: 'OFFSCREEN_START' });
   if (!resp.ok) throw new Error(resp.error || 'Falha ao iniciar gravacao');
   isRecording = true;
   setState({ phase: 'recording', status: 'gravando reuniao', error: '' });
@@ -215,3 +205,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   sendResponse({ ok: false, error: 'Mensagem desconhecida.' });
   return false;
 });
+
