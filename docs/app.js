@@ -5,27 +5,28 @@ const stopBtn = document.getElementById('stopBtn');
 const saveKeysBtn = document.getElementById('saveKeysBtn');
 const assemblyInput = document.getElementById('assemblyKey');
 const openrouterInput = document.getElementById('openrouterKey');
-const grokInput = document.getElementById('grokKey');
+const groqInput = document.getElementById('groqKey');
 
 function setStatus(msg){ statusEl.textContent = `Status: ${msg}`; }
 function loadLocalKeys() {
   assemblyInput.value = localStorage.getItem('meetleads_assembly') || '';
   openrouterInput.value = localStorage.getItem('meetleads_openrouter') || '';
-  grokInput.value = localStorage.getItem('meetleads_grok') || '';
+  groqInput.value = localStorage.getItem('meetleads_groq') || localStorage.getItem('meetleads_grok') || '';
 }
 function saveLocalKeys(payload) {
   localStorage.setItem('meetleads_assembly', payload.assembly || '');
   localStorage.setItem('meetleads_openrouter', payload.openrouter || '');
-  localStorage.setItem('meetleads_grok', payload.grok || '');
+  localStorage.setItem('meetleads_groq', payload.groq || ''); localStorage.setItem('meetleads_grok', payload.groq || '');
 }
 function pingExtension() { window.postMessage({ type: 'MEETLEADS_PING' }, '*'); }
 function pullState() { window.postMessage({ type: 'MEETLEADS_GET_STATE' }, '*'); }
+function pullKeysFromExtension() { window.postMessage({ type: 'MEETLEADS_GET_KEYS' }, '*'); }
 
 saveKeysBtn.onclick = () => {
   const payload = {
     assembly: assemblyInput.value.trim(),
     openrouter: openrouterInput.value.trim(),
-    grok: grokInput.value.trim()
+    groq: groqInput.value.trim()
   };
   saveLocalKeys(payload);
   setStatus('salvando chaves...');
@@ -55,15 +56,24 @@ window.addEventListener('message', (event) => {
     if (st.result) outputEl.textContent = JSON.stringify(st.result, null, 2);
     if (st.error) setStatus(`erro: ${st.error}`);
   }
+  if (event.data.type === 'MEETLEADS_KEYS') {
+    const k = event.data.payload || {};
+    if (k.assembly) assemblyInput.value = k.assembly;
+    if (k.openrouter) openrouterInput.value = k.openrouter;
+    if (k.groq) groqInput.value = k.groq;
+    saveLocalKeys({ assembly: assemblyInput.value, openrouter: openrouterInput.value, groq: groqInput.value });
+  }
   if (event.data.type === 'MEETLEADS_ERROR') setStatus(`erro: ${event.data.payload}`);
 });
 
 loadLocalKeys();
 setStatus('conectando extensao...');
 setTimeout(pingExtension, 200);
+setTimeout(pullKeysFromExtension, 400);
 setInterval(pullState, 1500);
 setTimeout(() => {
   if (statusEl.textContent.includes('conectando')) {
     setStatus('extensao nao conectada. Atualize em edge://extensions e recarregue a pagina.');
   }
 }, 2000);
+

@@ -188,6 +188,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  if (msg?.type === 'GET_KEYS') {
+    chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'groqKey', 'grokKey']).then((keys) => {
+      sendResponse({
+        ok: true,
+        payload: {
+          assembly: keys.assemblyKey || '',
+          openrouter: keys.openrouterKey || '',
+          groq: keys.groqKey || keys.grokKey || ''
+        }
+      });
+    }).catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
   if (msg?.type === 'SAVE_KEYS') {
     chrome.storage.local.set({
       assemblyKey: msg.payload?.assembly || '',

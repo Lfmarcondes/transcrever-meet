@@ -20,6 +20,7 @@ function saveLocalKeys(payload) {
 }
 function pingExtension() { window.postMessage({ type: 'MEETLEADS_PING' }, '*'); }
 function pullState() { window.postMessage({ type: 'MEETLEADS_GET_STATE' }, '*'); }
+function pullKeysFromExtension() { window.postMessage({ type: 'MEETLEADS_GET_KEYS' }, '*'); }
 
 saveKeysBtn.onclick = () => {
   const payload = {
@@ -55,12 +56,20 @@ window.addEventListener('message', (event) => {
     if (st.result) outputEl.textContent = JSON.stringify(st.result, null, 2);
     if (st.error) setStatus(`erro: ${st.error}`);
   }
+  if (event.data.type === 'MEETLEADS_KEYS') {
+    const k = event.data.payload || {};
+    if (k.assembly) assemblyInput.value = k.assembly;
+    if (k.openrouter) openrouterInput.value = k.openrouter;
+    if (k.groq) groqInput.value = k.groq;
+    saveLocalKeys({ assembly: assemblyInput.value, openrouter: openrouterInput.value, groq: groqInput.value });
+  }
   if (event.data.type === 'MEETLEADS_ERROR') setStatus(`erro: ${event.data.payload}`);
 });
 
 loadLocalKeys();
 setStatus('conectando extensao...');
 setTimeout(pingExtension, 200);
+setTimeout(pullKeysFromExtension, 400);
 setInterval(pullState, 1500);
 setTimeout(() => {
   if (statusEl.textContent.includes('conectando')) {

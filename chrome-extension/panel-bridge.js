@@ -38,6 +38,14 @@ window.addEventListener('message', async (event) => {
     );
   }
 
+  if (event.data.type === 'MEETLEADS_GET_KEYS') {
+    sendRuntimeMessage(
+      { type: 'GET_KEYS' },
+      (resp) => window.postMessage({ type: 'MEETLEADS_KEYS', payload: resp.payload }, '*'),
+      (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
+    );
+  }
+
   if (event.data.type === 'MEETLEADS_SAVE_KEYS') {
     sendRuntimeMessage(
       { type: 'SAVE_KEYS', payload: event.data.payload || {} },
