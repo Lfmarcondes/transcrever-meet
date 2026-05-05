@@ -10,7 +10,7 @@
     "http://127.0.0.1:5500/*",
     "https://api.assemblyai.com/*",
     "https://openrouter.ai/*",
-    "https://api.x.ai/*"
+    "https://api.groq.com/*"
   ],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Meet Leads" },

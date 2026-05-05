@@ -5,18 +5,18 @@ const stopBtn = document.getElementById('stopBtn');
 const saveKeysBtn = document.getElementById('saveKeysBtn');
 const assemblyInput = document.getElementById('assemblyKey');
 const openrouterInput = document.getElementById('openrouterKey');
-const grokInput = document.getElementById('grokKey');
+const groqInput = document.getElementById('groqKey');
 
 function setStatus(msg){ statusEl.textContent = `Status: ${msg}`; }
 function loadLocalKeys() {
   assemblyInput.value = localStorage.getItem('meetleads_assembly') || '';
   openrouterInput.value = localStorage.getItem('meetleads_openrouter') || '';
-  grokInput.value = localStorage.getItem('meetleads_grok') || '';
+  groqInput.value = localStorage.getItem('meetleads_groq') || localStorage.getItem('meetleads_grok') || '';
 }
 function saveLocalKeys(payload) {
   localStorage.setItem('meetleads_assembly', payload.assembly || '');
   localStorage.setItem('meetleads_openrouter', payload.openrouter || '');
-  localStorage.setItem('meetleads_grok', payload.grok || '');
+  localStorage.setItem('meetleads_groq', payload.groq || ''); localStorage.setItem('meetleads_grok', payload.groq || '');
 }
 function pingExtension() { window.postMessage({ type: 'MEETLEADS_PING' }, '*'); }
 function pullState() { window.postMessage({ type: 'MEETLEADS_GET_STATE' }, '*'); }
@@ -25,7 +25,7 @@ saveKeysBtn.onclick = () => {
   const payload = {
     assembly: assemblyInput.value.trim(),
     openrouter: openrouterInput.value.trim(),
-    grok: grokInput.value.trim()
+    groq: groqInput.value.trim()
   };
   saveLocalKeys(payload);
   setStatus('salvando chaves...');
@@ -67,3 +67,4 @@ setTimeout(() => {
     setStatus('extensao nao conectada. Atualize em edge://extensions e recarregue a pagina.');
   }
 }, 2000);
+

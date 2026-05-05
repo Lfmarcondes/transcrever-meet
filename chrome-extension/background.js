@@ -102,19 +102,20 @@ async function extractOpenRouter(transcript, openrouterKey) {
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
 
-async function extractGrok(transcript, grokKey) {
-  const resp = await fetch('https://api.x.ai/v1/chat/completions', {
+async function extractGroq(transcript, groqKey) {
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${grokKey}`, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${groqKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'grok-3-mini',
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'system', content: EXTRACTION_PROMPT }, { role: 'user', content: transcript }],
-      response_format: { type: 'json_object' }
+      response_format: { type: 'json_object' },
+      temperature: 0.2
     })
   });
   if (!resp.ok) {
     const raw = await resp.text();
-    throw new Error(`Grok falhou (${resp.status}): ${raw.slice(0, 400)}`);
+    throw new Error(`Groq falhou (${resp.status}): ${raw.slice(0, 400)}`);
   }
   const data = await resp.json();
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
@@ -140,9 +141,10 @@ async function stopCaptureOnly() {
 }
 
 async function processPipeline(base64Audio, panelTabId) {
-  const { assemblyKey, openrouterKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'grokKey']);
+  const { assemblyKey, openrouterKey, groqKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'groqKey', 'grokKey']);
+  const groqEffective = groqKey || grokKey || '';
   if (!assemblyKey) throw new Error('Configure AssemblyAI key no painel');
-  if (!openrouterKey && !grokKey) throw new Error('Configure OpenRouter ou Grok key no painel');
+  if (!openrouterKey && !groqEffective) throw new Error('Configure OpenRouter ou Groq key no painel');
 
   setState({ phase: 'transcribing', status: 'transcrevendo audio...', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'transcrevendo audio...');
@@ -158,11 +160,11 @@ async function processPipeline(base64Audio, panelTabId) {
     structured = await extractOpenRouter(transcript, openrouterKey);
   } catch (e) {
     openRouterError = String(e?.message || e);
-    if (!grokKey) throw new Error(`OpenRouter falhou e Grok nao configurado: ${openRouterError}`);
+    if (!groqEffective) throw new Error(`OpenRouter falhou e Groq nao configurado: ${openRouterError}`);
     try {
-      structured = await extractGrok(transcript, grokKey);
+      structured = await extractGroq(transcript, groqEffective);
     } catch (g) {
-      throw new Error(`OpenRouter: ${openRouterError} | Grok: ${String(g?.message || g)}`);
+      throw new Error(`OpenRouter: ${openRouterError} | Groq: ${String(g?.message || g)}`);
     }
   }
 
@@ -190,7 +192,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.set({
       assemblyKey: msg.payload?.assembly || '',
       openrouterKey: msg.payload?.openrouter || '',
-      grokKey: msg.payload?.grok || ''
+      groqKey: msg.payload?.groq || msg.payload?.grok || '',
+      grokKey: msg.payload?.groq || msg.payload?.grok || ''
     }).then(async () => {
       setState({ status: 'chaves salvas com sucesso', error: '' });
       sendResponse({ ok: true });
