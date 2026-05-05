@@ -9,10 +9,10 @@
 <body>
   <main class="container">
     <h1>Meet Leads</h1>
-    <p class="subtitle">Operacao comercial em 2 cliques</p>
+    <p class="subtitle">Sem terminal. Uso comercial guiado.</p>
 
     <section class="card">
-      <h2>Configuracao (admin)</h2>
+      <h2>Passo 1 - Configuracao (admin)</h2>
       <div class="grid">
         <input id="assemblyKey" type="password" placeholder="AssemblyAI API Key" />
         <input id="openrouterKey" type="password" placeholder="OpenRouter API Key" />
@@ -21,12 +21,19 @@
       <div class="row">
         <button id="saveKeysBtn">Salvar chaves</button>
       </div>
+      <p class="hint">Apos salvar, o status vai mostrar "chaves salvas com sucesso".</p>
     </section>
 
     <section class="card">
+      <h2>Passo 2 - Reuniao</h2>
+      <ol>
+        <li>Abra sua reuniao no Google Meet.</li>
+        <li>Clique em "Iniciar reuniao" e selecione a aba do Meet com audio.</li>
+        <li>No fim, clique em "Parar e gerar resumo".</li>
+      </ol>
       <div class="row">
-        <button id="startBtn">1) Iniciar reuniao</button>
-        <button id="stopBtn" class="danger">2) Parar e gerar resumo</button>
+        <button id="startBtn">Iniciar reuniao</button>
+        <button id="stopBtn" class="danger">Parar e gerar resumo</button>
       </div>
       <p id="status">Status: aguardando</p>
     </section>
@@ -36,7 +43,6 @@
       <pre id="output">Nenhum resultado ainda.</pre>
     </section>
   </main>
-
   <script src="app.js"></script>
 </body>
 </html>

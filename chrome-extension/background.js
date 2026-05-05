@@ -2,49 +2,13 @@
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
-Retorne APENAS JSON valido no schema solicitado, sem markdown.
-
-Schema esperado:
-{
-  "lead_nome": "",
-  "data_reuniao": "",
-  "perfil_lead": {
-    "tipo": "investidor | moradia | indeciso",
-    "nivel_experiencia": "iniciante | intermediario | avancado",
-    "ticket_estimado": "",
-    "prazo_decisao": ""
-  },
-  "interesses": [],
-  "objecoes": [],
-  "dores_identificadas": [],
-  "gatilhos_que_mais_reagiu": [],
-  "nivel_engajamento": 0,
-  "probabilidade_fechamento": 0,
-  "proximos_passos": [],
-  "resumo_geral": "",
-  "origem_transcricao": "",
-  "confianca_extracao": 0
-}`;
+Retorne APENAS JSON valido no schema solicitado, sem markdown.`;
 
 async function ensureOffscreenDocument() {
   const url = chrome.runtime.getURL('offscreen.html');
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [url]
-  });
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url] });
   if (contexts.length > 0) return;
-
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Gravar audio da aba do Google Meet para gerar resumo comercial'
-  });
-}
-
-function findMeetTab() {
-  return new Promise((resolve) => {
-    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => resolve((tabs && tabs[0]) || null));
-  });
+  await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['USER_MEDIA'], justification: 'Gravar audio da reuniao para resumo comercial' });
 }
 
 function runtimeSend(msg) {
@@ -52,6 +16,18 @@ function runtimeSend(msg) {
     chrome.runtime.sendMessage(msg, (resp) => {
       if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
       resolve(resp || { ok: false, error: 'sem resposta' });
+    });
+  });
+}
+
+function chooseTabAudioStream() {
+  return new Promise((resolve, reject) => {
+    chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], (streamId) => {
+      if (!streamId) {
+        reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
+        return;
+      }
+      resolve(streamId);
     });
   });
 }
@@ -72,9 +48,7 @@ function safeJsonParse(raw) {
 async function uploadToAssemblyAI(base64Audio, assemblyKey) {
   const bytes = decodeBase64ToBytes(base64Audio);
   const uploadResp = await fetch('https://api.assemblyai.com/v2/upload', {
-    method: 'POST',
-    headers: { authorization: assemblyKey, 'content-type': 'application/octet-stream' },
-    body: bytes
+    method: 'POST', headers: { authorization: assemblyKey, 'content-type': 'application/octet-stream' }, body: bytes
   });
   if (!uploadResp.ok) throw new Error('Falha upload AssemblyAI');
   const uploadData = await uploadResp.json();
@@ -83,8 +57,7 @@ async function uploadToAssemblyAI(base64Audio, assemblyKey) {
 
 async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
   const createResp = await fetch('https://api.assemblyai.com/v2/transcript', {
-    method: 'POST',
-    headers: { authorization: assemblyKey, 'content-type': 'application/json' },
+    method: 'POST', headers: { authorization: assemblyKey, 'content-type': 'application/json' },
     body: JSON.stringify({ audio_url: uploadUrl, language_code: 'pt' })
   });
   if (!createResp.ok) throw new Error('Falha ao criar transcricao');
@@ -92,9 +65,7 @@ async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
 
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 2000));
-    const poll = await fetch(`https://api.assemblyai.com/v2/transcript/${createData.id}`, {
-      headers: { authorization: assemblyKey }
-    });
+    const poll = await fetch(`https://api.assemblyai.com/v2/transcript/${createData.id}`, { headers: { authorization: assemblyKey } });
     if (!poll.ok) throw new Error('Falha polling transcricao');
     const p = await poll.json();
     if (p.status === 'completed') return p.text || '';
@@ -106,16 +77,10 @@ async function transcribeAssemblyAI(uploadUrl, assemblyKey) {
 async function extractOpenRouter(transcript, openrouterKey) {
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${openrouterKey}`,
-      'content-type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${openrouterKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'openrouter/auto',
-      messages: [
-        { role: 'system', content: EXTRACTION_PROMPT },
-        { role: 'user', content: transcript }
-      ],
+      messages: [{ role: 'system', content: EXTRACTION_PROMPT }, { role: 'user', content: transcript }],
       response_format: { type: 'json_object' }
     })
   });
@@ -127,16 +92,10 @@ async function extractOpenRouter(transcript, openrouterKey) {
 async function extractGrok(transcript, grokKey) {
   const resp = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${grokKey}`,
-      'content-type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${grokKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'grok-3-mini',
-      messages: [
-        { role: 'system', content: EXTRACTION_PROMPT },
-        { role: 'user', content: transcript }
-      ],
+      messages: [{ role: 'system', content: EXTRACTION_PROMPT }, { role: 'user', content: transcript }],
       response_format: { type: 'json_object' }
     })
   });
@@ -147,21 +106,16 @@ async function extractGrok(transcript, grokKey) {
 
 async function startCapture() {
   if (isRecording) return { ok: false, error: 'ja existe gravacao em andamento' };
-  const tab = await findMeetTab();
-  if (!tab?.id) return { ok: false, error: 'Nenhuma aba do Google Meet aberta' };
-
   await ensureOffscreenDocument();
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+  const streamId = await chooseTabAudioStream();
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
   if (!resp.ok) return resp;
-
   isRecording = true;
   return { ok: true };
 }
 
 async function stopAndProcess() {
   if (!isRecording) return { ok: false, error: 'nao existe gravacao em andamento' };
-
   const { assemblyKey, openrouterKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'grokKey']);
   if (!assemblyKey) return { ok: false, error: 'Configure AssemblyAI key no painel' };
   if (!openrouterKey && !grokKey) return { ok: false, error: 'Configure OpenRouter ou Grok key no painel' };
@@ -183,19 +137,16 @@ async function stopAndProcess() {
   }
 
   structured.data_reuniao = structured.data_reuniao || new Date().toISOString();
-  structured.origem_transcricao = 'assemblyai_tab_capture';
+  structured.origem_transcricao = 'assemblyai_desktop_capture';
   if (typeof structured.confianca_extracao !== 'number') structured.confianca_extracao = 75;
-
   return { ok: true, payload: structured };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'SAVE_KEYS') {
-    chrome.storage.local.set({
-      assemblyKey: msg.payload?.assembly || '',
-      openrouterKey: msg.payload?.openrouter || '',
-      grokKey: msg.payload?.grok || ''
-    }).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    chrome.storage.local.set({ assemblyKey: msg.payload?.assembly || '', openrouterKey: msg.payload?.openrouter || '', grokKey: msg.payload?.grok || '' })
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
 

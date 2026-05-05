@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
-          chromeMediaSource: 'tab',
+          chromeMediaSource: 'desktop',
           chromeMediaSourceId: msg.streamId
         }
       },
@@ -32,9 +32,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       };
       mediaRecorder.start(1000);
       sendResponse({ ok: true });
-    }).catch((err) => {
-      sendResponse({ ok: false, error: String(err) });
-    });
+    }).catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
   }
 
@@ -49,9 +47,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const blob = new Blob(chunks, { type: 'audio/webm' });
         const ab = await blob.arrayBuffer();
         const base64 = arrayBufferToBase64(ab);
-        if (activeStream) {
-          activeStream.getTracks().forEach((t) => t.stop());
-        }
+        if (activeStream) activeStream.getTracks().forEach((t) => t.stop());
         mediaRecorder = null;
         activeStream = null;
         chunks = [];
