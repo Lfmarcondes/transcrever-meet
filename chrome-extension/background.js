@@ -1,5 +1,5 @@
 ﻿let isRecording = false;
-const EXT_VERSION = '0.3.2';
+const EXT_VERSION = '0.4.0';
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
@@ -27,16 +27,9 @@ function chooseTabAudioStream(targetTab) {
       reject(new Error('Nao foi possivel identificar a aba de origem do painel.'));
       return;
     }
-
     chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], targetTab, (streamId) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      if (!streamId) {
-        reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
-        return;
-      }
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (!streamId) return reject(new Error('Selecao cancelada. Escolha a aba do Meet e marque compartilhar audio.'));
       resolve(streamId);
     });
   });
@@ -53,6 +46,12 @@ function safeJsonParse(raw) {
   try { return JSON.parse(raw); } catch (_) {}
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();
   return JSON.parse(cleaned);
+}
+
+async function postToPanel(panelTabId, type, payload) {
+  try {
+    await chrome.tabs.sendMessage(panelTabId, { type, payload });
+  } catch (_) {}
 }
 
 async function uploadToAssemblyAI(base64Audio, assemblyKey) {
@@ -124,19 +123,24 @@ async function startCapture(targetTab) {
   return { ok: true };
 }
 
-async function stopAndProcess() {
-  if (!isRecording) return { ok: false, error: 'nao existe gravacao em andamento' };
-  const { assemblyKey, openrouterKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'grokKey']);
-  if (!assemblyKey) return { ok: false, error: 'Configure AssemblyAI key no painel' };
-  if (!openrouterKey && !grokKey) return { ok: false, error: 'Configure OpenRouter ou Grok key no painel' };
-
+async function stopCaptureOnly() {
+  if (!isRecording) throw new Error('nao existe gravacao em andamento');
   const stopResp = await runtimeSend({ type: 'OFFSCREEN_STOP' });
-  if (!stopResp.ok) return stopResp;
+  if (!stopResp.ok) throw new Error(stopResp.error || 'falha ao parar gravacao');
   isRecording = false;
+  return stopResp.base64;
+}
 
-  const uploadUrl = await uploadToAssemblyAI(stopResp.base64, assemblyKey);
+async function processPipeline(base64Audio, panelTabId) {
+  const { assemblyKey, openrouterKey, grokKey } = await chrome.storage.local.get(['assemblyKey', 'openrouterKey', 'grokKey']);
+  if (!assemblyKey) throw new Error('Configure AssemblyAI key no painel');
+  if (!openrouterKey && !grokKey) throw new Error('Configure OpenRouter ou Grok key no painel');
+
+  await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'transcrevendo audio...');
+  const uploadUrl = await uploadToAssemblyAI(base64Audio, assemblyKey);
   const transcript = await transcribeAssemblyAI(uploadUrl, assemblyKey);
 
+  await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'estruturando resumo...');
   let structured;
   try {
     if (!openrouterKey) throw new Error('sem openrouter');
@@ -149,29 +153,49 @@ async function stopAndProcess() {
   structured.data_reuniao = structured.data_reuniao || new Date().toISOString();
   structured.origem_transcricao = 'assemblyai_desktop_capture';
   if (typeof structured.confianca_extracao !== 'number') structured.confianca_extracao = 75;
-  return { ok: true, payload: structured };
+  await postToPanel(panelTabId, 'MEETLEADS_PUSH_RESULT', structured);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type === 'PING') {
-    sendResponse({ ok: true, version: EXT_VERSION });
-    return;
-  }
+  (async () => {
+    if (msg?.type === 'PING') {
+      sendResponse({ ok: true, version: EXT_VERSION });
+      return;
+    }
 
-  if (msg?.type === 'SAVE_KEYS') {
-    chrome.storage.local.set({ assemblyKey: msg.payload?.assembly || '', openrouterKey: msg.payload?.openrouter || '', grokKey: msg.payload?.grok || '' })
-      .then(() => sendResponse({ ok: true }))
-      .catch((e) => sendResponse({ ok: false, error: String(e) }));
-    return true;
-  }
+    if (msg?.type === 'SAVE_KEYS') {
+      await chrome.storage.local.set({
+        assemblyKey: msg.payload?.assembly || '',
+        openrouterKey: msg.payload?.openrouter || '',
+        grokKey: msg.payload?.grok || ''
+      });
+      sendResponse({ ok: true });
+      return;
+    }
 
-  if (msg?.type === 'FIND_MEET_TAB_AND_START') {
-    startCapture(sender?.tab).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
-    return true;
-  }
+    if (msg?.type === 'FIND_MEET_TAB_AND_START') {
+      const resp = await startCapture(sender?.tab);
+      sendResponse(resp);
+      return;
+    }
 
-  if (msg?.type === 'STOP_AND_PROCESS') {
-    stopAndProcess().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
-    return true;
-  }
+    if (msg?.type === 'STOP_AND_PROCESS') {
+      const panelTabId = sender?.tab?.id;
+      if (!panelTabId) {
+        sendResponse({ ok: false, error: 'Nao foi possivel identificar aba do painel.' });
+        return;
+      }
+      const base64Audio = await stopCaptureOnly();
+      sendResponse({ ok: true, accepted: true });
+
+      processPipeline(base64Audio, panelTabId).catch(async (e) => {
+        await postToPanel(panelTabId, 'MEETLEADS_PUSH_ERROR', String(e?.message || e));
+      });
+      return;
+    }
+
+    sendResponse({ ok: false, error: 'Mensagem desconhecida.' });
+  })().catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+
+  return true;
 });

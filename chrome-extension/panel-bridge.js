@@ -12,6 +12,20 @@
   });
 }
 
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg?.type) return;
+
+  if (msg.type === 'MEETLEADS_PUSH_STATUS') {
+    window.postMessage({ type: 'MEETLEADS_STATUS', payload: msg.payload }, '*');
+  }
+  if (msg.type === 'MEETLEADS_PUSH_RESULT') {
+    window.postMessage({ type: 'MEETLEADS_RESULT', payload: msg.payload }, '*');
+  }
+  if (msg.type === 'MEETLEADS_PUSH_ERROR') {
+    window.postMessage({ type: 'MEETLEADS_ERROR', payload: msg.payload }, '*');
+  }
+});
+
 window.addEventListener('message', async (event) => {
   if (!event.data?.type) return;
 
@@ -42,7 +56,7 @@ window.addEventListener('message', async (event) => {
   if (event.data.type === 'MEETLEADS_STOP') {
     sendRuntimeMessage(
       { type: 'STOP_AND_PROCESS' },
-      (resp) => window.postMessage({ type: 'MEETLEADS_RESULT', payload: resp.payload }, '*'),
+      () => window.postMessage({ type: 'MEETLEADS_STATUS', payload: 'processando audio e gerando resumo...' }, '*'),
       (err) => window.postMessage({ type: 'MEETLEADS_ERROR', payload: err }, '*')
     );
   }
