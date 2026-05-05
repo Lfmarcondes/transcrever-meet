@@ -1,5 +1,5 @@
 ﻿let isRecording = false;
-const EXT_VERSION = '0.3.1';
+const EXT_VERSION = '0.3.2';
 
 const EXTRACTION_PROMPT = `Voce eh um analista comercial do mercado imobiliario.
 Recebera a transcricao de uma reuniao com lead.
@@ -21,9 +21,14 @@ function runtimeSend(msg) {
   });
 }
 
-function chooseTabAudioStream() {
+function chooseTabAudioStream(targetTab) {
   return new Promise((resolve, reject) => {
-    chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], (streamId) => {
+    if (!targetTab || !targetTab.id) {
+      reject(new Error('Nao foi possivel identificar a aba de origem do painel.'));
+      return;
+    }
+
+    chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], targetTab, (streamId) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
@@ -109,10 +114,9 @@ async function extractGrok(transcript, grokKey) {
   return safeJsonParse(data.choices?.[0]?.message?.content || '{}');
 }
 
-async function startCapture() {
+async function startCapture(targetTab) {
   if (isRecording) return { ok: false, error: 'ja existe gravacao em andamento' };
-  // chooseDesktopMedia precisa acontecer direto no gesto do usuario.
-  const streamId = await chooseTabAudioStream();
+  const streamId = await chooseTabAudioStream(targetTab);
   await ensureOffscreenDocument();
   const resp = await runtimeSend({ type: 'OFFSCREEN_START', streamId });
   if (!resp.ok) return resp;
@@ -148,7 +152,7 @@ async function stopAndProcess() {
   return { ok: true, payload: structured };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'PING') {
     sendResponse({ ok: true, version: EXT_VERSION });
     return;
@@ -162,7 +166,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg?.type === 'FIND_MEET_TAB_AND_START') {
-    startCapture().then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    startCapture(sender?.tab).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
 
