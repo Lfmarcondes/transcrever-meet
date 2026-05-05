@@ -137,6 +137,9 @@ async function stopCaptureOnly() {
   const stopResp = await runtimeSend({ type: 'OFFSCREEN_STOP' });
   if (!stopResp.ok) throw new Error(stopResp.error || 'falha ao parar gravacao');
   isRecording = false;
+  if ((stopResp.bytes || 0) < 12000 || (stopResp.audioPeak || 0) < 0.003) {
+    throw new Error('Audio capturado muito baixo ou mudo. No seletor, escolha a aba do Meet e marque compartilhar audio.');
+  }
   return stopResp.base64;
 }
 
@@ -150,6 +153,9 @@ async function processPipeline(base64Audio, panelTabId) {
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'transcrevendo audio...');
   const uploadUrl = await uploadToAssemblyAI(base64Audio, assemblyKey);
   const transcript = await transcribeAssemblyAI(uploadUrl, assemblyKey);
+  if (!transcript || transcript.trim().length < 20) {
+    throw new Error('Transcricao vazia ou quase vazia. Verifique se a aba correta foi compartilhada com audio.');
+  }
 
   setState({ phase: 'summarizing', status: 'estruturando resumo...', error: '' });
   await postToPanel(panelTabId, 'MEETLEADS_PUSH_STATUS', 'estruturando resumo...');
